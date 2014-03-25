@@ -1,0 +1,6 @@
+tzdata	tzdata/Zones/Australia	select	Adelaide
+tzdata	tzdata/Areas	select	Australia
+dash	dash/sh	boolean	true
+locales	locales/default_environment_locale	select	en_AU.UTF-8
+locales	locales/locales_to_be_generated	multiselect	en_AU.UTF-8 UTF-8
+

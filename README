@@ -1,0 +1,151 @@
+A framework for generating raspberryPi rootfs trees.
+
+SOME ASSEMBLY REQUIRED. BATTERIES NOT INCLUDED.
+
+I AM NOT RESPONSIBLE IF THESE SCRIPTS WIPE YOUR MACHINE, SET FIRE TO
+YOUR HOUSE, EMAIL YOUR BANKING PASSWORD TO CRIMINAL GANGS OR PRECIPITATE
+GLOBAL THERMONUCLEAR WAR.
+
+Given that you will need to run some of these scripts under sudo, the
+first is a distinctly non-zero possibility. If you are worried about
+this, you could probably build yourself a basic ubuntu VM to run this in
+so you don't hose stuff if things go wrong.
+
+WHAT YOU WILL NEED:
+
+* A machine running a debian derivative (eg debian itself, ubuntu, etc).
+
+* A recent version of multistrap.
+	At time of writing, ubuntu ships 2.1.6ubuntu3 which is too old.
+	I installed 2.1.20 from debian; it is pretty much a standalone
+	package so this is reasonably safe.
+
+* A qemu-static binary appropriate for your target architecture.
+	Which I'm assuming is a raspberry Pi, but could be anything.
+	Ideally, it would match exactly. In practice,
+	/usr/bin/qemu-arm-static on my ubuntu system is armv7, but
+	everything still seems to work OK. I suspect it is possible
+	that some packages which compile stuff at install time
+	might generate code that wouldn't actually run on the pi,
+	but I haven't hit that in my experiments. If someone could build
+	a qemu static binary which more closely matches the pi, that
+	would be cool.
+
+* An SD card (assuming a Pi)
+
+HOW TO USE IT
+
+To get started, customize the list of packages in the [raspbian] section
+of multistrap.conf, check all the points marked "FIXME" in
+configscript.sh, and run something like:
+
+sudo multistrap -a armhf -d pi-root-tree -f multistrap.conf
+
+(where pi-root-tree is the name of the target directory, which ideally
+should be non-existant or empty).
+
+A few minutes later (about 5 on my machine), it will finish, hopefully
+with no errors. You will now have a directory tree under the target
+directory which looks like the filesystem of a raspberry pi.
+
+Now you need to format your SD card appropriately and mount it
+somewhere. My example configscript.sh assumes that your card has a vfat
+partition 1, swap space on partition 2, and everything else in an ext4
+partition 3. Partition your card with fdisk, create appropriate
+filesystems on the first and third partitions, mkswap the second one.
+Now mount the third partition somewhere (eg /mnt), create the boot
+directory (eg mkdir /mnt/boot), and then mount the first partition on
+that point. Now do something like:
+sudo rsync -nav --delete --numeric-ids --exclude=lost+found --modify-window=1 pi-root-tree/ /mnt/
+
+Unmount the card (you'll need to umount /mnt/boot before /mnt), remove
+it from the host machine and plug it into the Pi - and hopefully it will
+boot.
+
+In theory you could avoid the rsync step by mounting up your SD card as
+above before building the tree, and then running multistrap with the
+root of the SD card as the target directory, but this will involve doing
+a lot of IO to the SD card, so this will probably be extremely slow.
+
+Of course, if you are building this for something other then a raspberry
+Pi, you'll need to know how to convert this directory tree into a root
+fs image for whatever you are targeting.
+
+HOW IT WORKS:
+
+Multistrap is the engine that drives most of this.
+
+The multistrap.conf file contains enough to build a very basic install
+for a pi.
+
+The [General] section at the top has a couple of keywords worth looking
+at.
+
+debconfseed=preseed
+	This causes the file called 'preseed' to get copied into
+/tmp/preseeds under the chroot, and used to answer config questions with
+predefined values rather than interactive prompts. The included example
+sets the timezone, the default locale, and says to use /bin/dash as
+/bin/sh. If you include other packages which need configuration you may
+need to add stuff to this file.
+
+configscript=configscript.sh
+	This causes the file 'configscript.sh' to get copied into the
+chroot. We execute this in chroot context from a hook later.
+
+hookdir=zzz-hooks
+	This points to a directory containing hook scripts which get
+executed at various points. We use one of these to execute the
+configscript.sh later.
+
+The [raspbian] and [pi] sections define sets of packages to be
+installed. All packages defined as 'required' will be installed anyway.
+You could in fact remove all the packages= lines under the
+[raspbian] section and get an even more stripped out image, but that
+would remove, for example, networking. However you should definitely
+review these packages lines to add tools you like to always have
+available or remove any you know you wouldn't use (eg wpasupplicant,
+wireless tools and iw if you never expect to be using wifi for
+networking).
+
+The configscript.sh file is run in chroot context under qemu after the
+packages are unpacked by multistrap (and after any other hook scripts
+defined in other multistrap configuration files). Quite a few things
+will probably need fixing in there for your environment; look for the
+string "FIXME" to see where I think you'll need to look at it.
+Near the bottom, it runs any other scripts found in /tmp/hook-scripts;
+so other variants (see below) can simply put scripts here in the chroot
+for them to be executed in chroot context later.
+Finally there's a section which removes the temporary stuff, including
+configscript.sh itself and the qemu binary.
+
+zzz-hooks/completion-zzz-final-hook.sh is the script which actually does
+the qemu work.
+
+multistrap-mpd.conf is an example of a cascaded multistrap configuration
+which extends the base system built by the multistrap.conf above. The
+[General] section has an 'include=multistrap.conf' line which causes it
+to pick up the base stuff. It defines its own hookdir with some
+additional scripts, and an extra package section where it installs more
+packages (note that the source, suite and omitdebsrc lines are the same
+as the [raspbian] section in the main file).
+
+mpd-hooks/completion-copy-wolfson-kernel.sh copies a tarball of the
+custom kernel needed for the wolfson audio card into the chroot
+
+mpd-hooks/completion-create-scripts.sh mostly just creates a script
+under /tmp/hook-scripts in the chroot, which will get executed near the
+bottom of configscript.sh.
+
+mpd-hooks/completion-patch-base-files-postinst.sh corrects an issue in
+the postinst of the base-files package which breaks things if packages
+create new directories under /var/run (which mpd does).
+
+If for some reason you want to get into the chroot and do something
+after multistrap has finished running (eg install an extra package you
+forgot), just copy qemu-arm-static into /usr/bin under the chroot, and
+chroot into it. You'll probably need to create an /etc/resolv.conf if
+you want to install anything, and if it is a daemon you would probably
+want to do the trick with the fake scripts at the top of configscript.sh
+so you don't end up with the daemon being started under qemu in the
+chroot!
