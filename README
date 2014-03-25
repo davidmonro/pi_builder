@@ -120,7 +120,8 @@ Finally there's a section which removes the temporary stuff, including
 configscript.sh itself and the qemu binary.
 
 zzz-hooks/completion-zzz-final-hook.sh is the script which actually does
-the qemu work.
+the qemu work. If you are feeling particularly brave, you could add
+stuff to this to prepare the SD card after preparing the tree.
 
 multistrap-mpd.conf is an example of a cascaded multistrap configuration
 which extends the base system built by the multistrap.conf above. The
